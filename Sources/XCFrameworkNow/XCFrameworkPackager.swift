@@ -1,6 +1,19 @@
 import Foundation
 import arm64_to_sim
 
+enum PackagerError: Error {
+    case samePlatformInMultipleLibraries(platform: Platform, lib1: GenericInfo, lib2: GenericInfo)
+}
+
+extension PackagerError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case let .samePlatformInMultipleLibraries(platform, lib1, lib2):
+            return "Slices for the same platform in multiple libraries is not supported: '\(platform)' slices found in \(lib1.baseUrl.path) and \(lib2.baseUrl.path)"
+        }
+    }
+}
+
 public class XCFrameworkPackager {
     
     let infoArray: [GenericInfo]
@@ -24,37 +37,36 @@ public class XCFrameworkPackager {
         }
         
         var inputParams = [String]()
-
-        for info in infoArray {
-            var map = [Platform: [Slice]]()
-            info.slices.forEach {
-                var slices = map[$0.destination] ?? [Slice]()
-                slices.append($0)
-                map[$0.destination] = slices
-            }
-            
-            map.forEach { key, value in
-                print("Process platform '\(key.stringValue())' containing (\(value.compactMap { $0.arch }.joined(separator: ", "))) slices...")
-                let url = packagePlatformSlices(platform: key, info: info, slices: value)
-                if let url = url {
-                    if info is FrameworkInfo {
-                        inputParams += ["-framework", "\(url.path)"]
-                    } else if let libraryInfo = info as? LibraryInfo {
-                        inputParams += ["-library", "\(url.path)"]
-                        if let headersUrl = libraryInfo.headersUrl {
-                            inputParams += ["-headers", "\(headersUrl.path)"]
-                        }
+        
+        let splitInfo: [Platform: GenericInfo]
+        do {
+            splitInfo = try infoByPlatform()
+        } catch let error {
+            print("Error: \(error.localizedDescription)")
+            return
+        }
+                
+        splitInfo.forEach { platform, info in
+            print("Process platform '\(platform.stringValue())' containing (\(info.slices.compactMap { $0.arch }.joined(separator: ", "))) slices...")
+            let url = packagePlatformSlices(platform: platform, info: info)
+            if let url = url {
+                if info is FrameworkInfo {
+                    inputParams += ["-framework", "\(url.path)"]
+                } else if let libraryInfo = info as? LibraryInfo {
+                    inputParams += ["-library", "\(url.path)"]
+                    if let headersUrl = libraryInfo.headersUrl {
+                        inputParams += ["-headers", "\(headersUrl.path)"]
                     }
                 }
             }
-            
-            map.forEach { key, value in
-                if let variant = key.simulatorVariant(), let variantSlices = map[variant],
-                   let slice = value.first(where: { $0.arch == "arm64" }) {
-                    if variantSlices.first(where: { $0.arch == "arm64" }) == nil {
-                        print("Generate 'arm64' slice for platform '\(variant.stringValue())'...")
-                        _ = translatePlatformSlice(platform: variant, info: info, slice: slice)
-                    }
+        }
+        
+        splitInfo.forEach { platform, info in
+            if let variant = platform.simulatorVariant(), let variantInfo = splitInfo[variant],
+               let slice = info.slices.first(where: { $0.arch == "arm64" }) {
+                if variantInfo.slices.first(where: { $0.arch == "arm64" }) == nil {
+                    print("Generate 'arm64' slice for platform '\(variant.stringValue())'...")
+                    _ = translatePlatformSlice(platform: variant, info: info, slice: slice)
                 }
             }
         }
@@ -70,8 +82,31 @@ public class XCFrameworkPackager {
         }
     }
     
+    func infoByPlatform() throws -> [Platform: GenericInfo] {
+        var infoByPlatform = [Platform: GenericInfo]()
+        
+        for info in infoArray {
+            var map = [Platform: [Slice]]()
+            for slice in info.slices {
+                let platform = slice.destination
+                var slices = map[platform] ?? [Slice]()
+                slices.append(slice)
+                map[platform] = slices
+            }
+            for (platform, slices) in map {
+                if let existingInfo = infoByPlatform[platform] {
+                    throw PackagerError.samePlatformInMultipleLibraries(platform: platform, lib1: existingInfo, lib2: info)
+                }
+                var filteredInfo = info
+                filteredInfo.slices = slices
+                infoByPlatform[platform] = filteredInfo
+            }
+        }
+        
+        return infoByPlatform
+    }
     
-    func packagePlatformSlices(platform: Platform, info: GenericInfo, slices: [Slice]) -> URL? {
+    func packagePlatformSlices(platform: Platform, info: GenericInfo) -> URL? {
         let platformUrl = tempDirUrl.appendingPathComponent(platform.stringValue())
         try! FileManager.default.createDirectory(at: platformUrl, withIntermediateDirectories: true, attributes: nil)
         
@@ -83,7 +118,7 @@ public class XCFrameworkPackager {
         let libraryUrl = platformUrl.appendingPathComponent(info.binaryRelativePath)
         
         var extractParams = [String]()
-        slices.forEach { extractParams += ["-extract", $0.arch] }
+        info.slices.forEach { extractParams += ["-extract", $0.arch] }
         let (shellStatus, _) = shell(pwd: platformUrl.path, args: ["lipo"] + extractParams + ["-output", "\(libraryUrl.path)",  "\(info.binaryUrl.path)"])
         
         return shellStatus == 0 ? baseUrl : nil
