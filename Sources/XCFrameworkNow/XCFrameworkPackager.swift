@@ -160,8 +160,6 @@ public class XCFrameworkPackager {
                 }
             }
             
-            try! FileManager.default.removeItem(at: libraryUrl)
-            
             (shellStatus, _) = shell(pwd: platformUrl.path, args: ["ar", "crv", "\(libraryUrl.path)"] + objectFiles)
             if shellStatus != 0 { return false }
         }
