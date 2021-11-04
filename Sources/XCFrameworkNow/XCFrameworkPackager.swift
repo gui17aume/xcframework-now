@@ -32,9 +32,9 @@ public class XCFrameworkPackager {
 
         try! FileManager.default.createDirectory(at: tempDirUrl, withIntermediateDirectories: true, attributes: nil)
 
-        defer {
-            try! FileManager.default.removeItem(at: tempDirUrl)
-        }
+        //defer {
+        //    try! FileManager.default.removeItem(at: tempDirUrl)
+        //}
 
         var inputParams = [String]()
 
@@ -73,6 +73,7 @@ public class XCFrameworkPackager {
 
         print("Create XCFramework...")
         let args = ["xcodebuild", "-create-xcframework"] + inputParams + ["-output",  "\(destination.path)"]
+        print("args = \(args)")
         let (shellStatus, shellOutput) = shell(pwd: tempDirUrl.path, args: args)
 
         if shellStatus == 0 {
@@ -142,14 +143,11 @@ public class XCFrameworkPackager {
               print("Error: \(shellOutput)")
           }
         } else {
-          print("cmd = \(["cp", "\(info.binaryUrl.path)", "\(libraryUrl.path)"])")
           let (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["cp", "\(info.binaryUrl.path)", "\(libraryUrl.path)"])
           if shellStatus != 0 {
               print("Error: \(shellOutput)")
           }
         }
-
-
 
         if info.isDynamic {
             guard let simulatorPlatform = slice.destination.simulatorVariant() else { return false }
@@ -191,10 +189,34 @@ public class XCFrameworkPackager {
 
         let (shellStatus, shellOutput) = shell("lipo", "-create", "-output", "\(outputUrl.path)", "\(outputUrl.path)", "\(libraryUrl.path)")
 
-        if shellStatus == 0 {
-            print("lipo successful")
-        } else {
+        if shellStatus != 0 {
             print("Error: \(shellOutput)")
+        }
+
+        if let moduleUrlRelativePath = info.moduleUrlRelativePath {
+            // Copy over .swiftdoc and .swiftinterface as well
+
+            let doc_src = info.baseUrl.appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftdoc")
+            let doc_dst = tempDirUrl.appendingPathComponent(platform.stringValue()).appendingPathComponent(info.baseUrl.lastPathComponent).appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftdoc")
+
+            var (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["cp", "\(doc_src.path)", "\(doc_dst.path)"])
+            if shellStatus != 0 {
+                print("Error generating swiftinterface: \(shellOutput)")
+            }
+
+            let interface_src = info.baseUrl.appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftinterface")
+            let interface_dst = tempDirUrl.appendingPathComponent(platform.stringValue()).appendingPathComponent(info.baseUrl.lastPathComponent).appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftinterface")
+
+            (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["sed", "-E", "s/(arm64-apple-ios[^ ]*)/\\1-simulator/", "\(interface_src.path)"])
+            if shellStatus != 0 {
+                print("Error generating swiftdoc: \(shellOutput)")
+            } else {
+                do {
+                    try shellOutput.write(to: interface_dst, atomically: true, encoding: String.Encoding.utf8)
+                } catch (let e) {
+                    print("Error writing swiftdoc: \(e)")
+                }
+            }
         }
 
         return shellStatus == 0

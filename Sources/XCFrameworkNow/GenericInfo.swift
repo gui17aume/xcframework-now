@@ -1,33 +1,35 @@
 import Foundation
 
 public protocol GenericInfo {
-    
+
     var baseUrl: URL { get }
 
     var binaryUrl: URL { get }
-    
+
     var binaryRelativePath: String { get }
-    
+
+    var moduleUrlRelativePath: String? { get }
+
     var isDynamic: Bool { get set }
 
     var slices: [Slice] { get set }
-    
+
 }
 
 public struct Slice {
-    
+
     let arch: String
 
     let destination: Platform
-    
+
     let version: String
-    
+
     let sdk: String
-    
+
 }
 
 public enum Platform {
-    
+
     case macos
     case ios
     case tvos
@@ -36,7 +38,7 @@ public enum Platform {
     case iossimulator
     case tvossimulator
     case watchossimulator
-    
+
     init?(string: String) {
         switch string {
         case "MACOS", "\(PLATFORM_MACOS)": self = .macos
@@ -50,7 +52,7 @@ public enum Platform {
         default: return nil
         }
     }
-    
+
     init?(loadCommand: String, arch: String) {
         let isArchARM = arch.hasPrefix("arm")
         switch loadCommand {
@@ -61,7 +63,7 @@ public enum Platform {
         default: return nil
         }
     }
-    
+
     func numericValue() -> Int32 {
         switch self {
         case .macos: return PLATFORM_MACOS
@@ -74,7 +76,7 @@ public enum Platform {
         case .watchossimulator: return PLATFORM_WATCHOSSIMULATOR
         }
     }
-    
+
     func stringValue() -> String {
         switch self {
         case .macos: return "macos"
@@ -87,7 +89,7 @@ public enum Platform {
         case .watchossimulator: return "watchossimulator"
         }
     }
-    
+
     func simulatorVariant() -> Platform? {
         switch self {
         case .ios: return .iossimulator
@@ -96,5 +98,5 @@ public enum Platform {
         default: return nil
         }
     }
-    
+
 }
