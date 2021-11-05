@@ -15,29 +15,29 @@ extension PackagerError: LocalizedError {
 }
 
 public class XCFrameworkPackager {
-
+    
     let infoArray: [GenericInfo]
-
+    
     let tempDirUrl: URL
-
+    
     public init(info: [GenericInfo]) {
         self.infoArray = info
-
+        
         tempDirUrl = FileManager.default.temporaryDirectory
             .appendingPathComponent("com.grc.xcframework-now")
             .appendingPathComponent(UUID().uuidString)
     }
-
+    
     public func package(destination: URL) {
-
+        
         try! FileManager.default.createDirectory(at: tempDirUrl, withIntermediateDirectories: true, attributes: nil)
-
-        //defer {
-        //    try! FileManager.default.removeItem(at: tempDirUrl)
-        //}
-
+        
+        defer {
+            try! FileManager.default.removeItem(at: tempDirUrl)
+        }
+        
         var inputParams = [String]()
-
+        
         let splitInfo: [Platform: GenericInfo]
         do {
             splitInfo = try infoByPlatform()
@@ -45,7 +45,7 @@ public class XCFrameworkPackager {
             print("Error: \(error.localizedDescription)")
             return
         }
-
+                
         splitInfo.forEach { platform, info in
             print("Process platform '\(platform.stringValue())' containing (\(info.slices.compactMap { $0.arch }.joined(separator: ", "))) slices...")
             let url = packagePlatformSlices(platform: platform, info: info)
@@ -60,7 +60,7 @@ public class XCFrameworkPackager {
                 }
             }
         }
-
+        
         splitInfo.forEach { platform, info in
             if let variant = platform.simulatorVariant(), let variantInfo = splitInfo[variant],
                let slice = info.slices.first(where: { $0.arch == "arm64" }) {
@@ -70,22 +70,21 @@ public class XCFrameworkPackager {
                 }
             }
         }
-
+        
         print("Create XCFramework...")
         let args = ["xcodebuild", "-create-xcframework"] + inputParams + ["-output",  "\(destination.path)"]
-        print("args = \(args)")
         let (shellStatus, shellOutput) = shell(pwd: tempDirUrl.path, args: args)
-
+        
         if shellStatus == 0 {
             print("XCFramework successfully written out to: \(destination.path)")
         } else {
             print("Error: \(shellOutput)")
         }
     }
-
+    
     func infoByPlatform() throws -> [Platform: GenericInfo] {
         var infoByPlatform = [Platform: GenericInfo]()
-
+        
         for info in infoArray {
             var map = [Platform: [Slice]]()
             for slice in info.slices {
@@ -103,21 +102,21 @@ public class XCFrameworkPackager {
                 infoByPlatform[platform] = filteredInfo
             }
         }
-
+        
         return infoByPlatform
     }
-
+    
     func packagePlatformSlices(platform: Platform, info: GenericInfo) -> URL? {
         let platformUrl = tempDirUrl.appendingPathComponent(platform.stringValue())
         try! FileManager.default.createDirectory(at: platformUrl, withIntermediateDirectories: true, attributes: nil)
-
+        
         let baseUrl = platformUrl.appendingPathComponent(info.baseUrl.lastPathComponent)
         if let frameworkInfo = info as? FrameworkInfo {
             try! FileManager.default.copyItem(at: frameworkInfo.baseUrl, to: baseUrl)
         }
-
+        
         let libraryUrl = platformUrl.appendingPathComponent(info.binaryRelativePath)
-
+        
         var extractParams = [String]()
         info.slices.forEach { extractParams += ["-extract", $0.arch] }
         if info.slices.count > 1 {
@@ -130,11 +129,11 @@ public class XCFrameworkPackager {
         }
 
     }
-
+    
     func translatePlatformSlice(platform: Platform, info: GenericInfo, slice: Slice) -> Bool {
         let platformUrl = tempDirUrl.appendingPathComponent("\(platform.stringValue())-\(slice.arch)")
         try! FileManager.default.createDirectory(at: platformUrl, withIntermediateDirectories: true, attributes: nil)
-
+        
         let libraryUrl = platformUrl.appendingPathComponent(info.binaryUrl.lastPathComponent)
 
         if info.slices.count > 1 {
@@ -150,8 +149,9 @@ public class XCFrameworkPackager {
         }
 
         if info.isDynamic {
+            
             guard let simulatorPlatform = slice.destination.simulatorVariant() else { return false }
-
+            
             let platformCode = simulatorPlatform.numericValue()
             let minVersion = slice.version
             let sdkVersion = slice.sdk
@@ -166,11 +166,12 @@ public class XCFrameworkPackager {
            }
 
             if shellStatus != 0 { return false }
+            
         } else {
 
             var (shellStatus, _) = shell(pwd: platformUrl.path, args: "ar", "x", "\(libraryUrl.path)")
             if shellStatus != 0 { return false }
-
+            
             let enumerator = FileManager.default.enumerator(at: platformUrl, includingPropertiesForKeys: nil)
             var objectFiles = [String]()
             while let file = enumerator?.nextObject() as? URL {
@@ -179,11 +180,11 @@ public class XCFrameworkPackager {
                     objectFiles.append(file.lastPathComponent)
                 }
             }
-
+            
             (shellStatus, _) = shell(pwd: platformUrl.path, args: ["ar", "crv", "\(libraryUrl.path)"] + objectFiles)
             if shellStatus != 0 { return false }
         }
-
+        
         let outputUrl = tempDirUrl.appendingPathComponent(platform.stringValue())
             .appendingPathComponent(info.binaryRelativePath)
 
