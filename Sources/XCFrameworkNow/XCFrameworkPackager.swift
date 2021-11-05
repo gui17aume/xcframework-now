@@ -201,7 +201,7 @@ public class XCFrameworkPackager {
 
             var (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["cp", "\(doc_src.path)", "\(doc_dst.path)"])
             if shellStatus != 0 {
-                print("Error generating swiftinterface: \(shellOutput)")
+                print("Error copying swiftdoc: \(shellOutput)")
             }
 
             let interface_src = info.baseUrl.appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftinterface")
@@ -209,12 +209,12 @@ public class XCFrameworkPackager {
 
             (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["sed", "-E", "s/(arm64-apple-ios[^ ]*)/\\1-simulator/", "\(interface_src.path)"])
             if shellStatus != 0 {
-                print("Error generating swiftdoc: \(shellOutput)")
+                print("Error generating swiftinterface: \(shellOutput)")
             } else {
                 do {
                     try shellOutput.write(to: interface_dst, atomically: true, encoding: String.Encoding.utf8)
                 } catch (let e) {
-                    print("Error writing swiftdoc: \(e)")
+                    print("Error writing swiftinterface: \(e)")
                 }
             }
         }
