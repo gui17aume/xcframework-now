@@ -123,7 +123,6 @@ public class XCFrameworkPackager {
             let (shellStatus, _) = shell(pwd: platformUrl.path, args: ["lipo"] + extractParams + ["-output", "\(libraryUrl.path)",  "\(info.binaryUrl.path)"])
             return shellStatus == 0 ? baseUrl : nil
         } else {
-            print("cmd = \(["cp", "\(info.binaryUrl.path)", "\(libraryUrl.path)"])")
             let (shellStatus, _) = shell(pwd: platformUrl.path, args: ["cp", "\(info.binaryUrl.path)", "\(libraryUrl.path)"])
             return shellStatus == 0 ? baseUrl : nil
         }
