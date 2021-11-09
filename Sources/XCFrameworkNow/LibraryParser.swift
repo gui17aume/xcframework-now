@@ -13,7 +13,9 @@ public struct LibraryInfo: GenericInfo {
     public var binaryRelativePath: String {
         return baseUrl.lastPathComponent
     }
-    
+
+    public var moduleUrlRelativePath: String? = nil
+
     public var headersUrl: URL?
 
 }

@@ -13,7 +13,11 @@ public struct FrameworkInfo: GenericInfo {
     public var binaryRelativePath: String {
         return baseUrl.lastPathComponent + "/" + binaryUrl.lastPathComponent
     }
-    
+
+    public var moduleUrlRelativePath: String? {
+        return "Modules/" + binaryUrl.lastPathComponent + ".swiftmodule"
+    }
+
 }
 
 public class FrameworkParser: GenericParser {

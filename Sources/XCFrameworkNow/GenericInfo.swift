@@ -7,7 +7,9 @@ public protocol GenericInfo {
     var binaryUrl: URL { get }
     
     var binaryRelativePath: String { get }
-    
+
+    var moduleUrlRelativePath: String? { get }
+
     var isDynamic: Bool { get set }
 
     var slices: [Slice] { get set }

@@ -119,9 +119,14 @@ public class XCFrameworkPackager {
         
         var extractParams = [String]()
         info.slices.forEach { extractParams += ["-extract", $0.arch] }
-        let (shellStatus, _) = shell(pwd: platformUrl.path, args: ["lipo"] + extractParams + ["-output", "\(libraryUrl.path)",  "\(info.binaryUrl.path)"])
-        
-        return shellStatus == 0 ? baseUrl : nil
+        if info.slices.count > 1 {
+            let (shellStatus, _) = shell(pwd: platformUrl.path, args: ["lipo"] + extractParams + ["-output", "\(libraryUrl.path)",  "\(info.binaryUrl.path)"])
+            return shellStatus == 0 ? baseUrl : nil
+        } else {
+            let (shellStatus, _) = shell(pwd: platformUrl.path, args: ["cp", "\(info.binaryUrl.path)", "\(libraryUrl.path)"])
+            return shellStatus == 0 ? baseUrl : nil
+        }
+
     }
     
     func translatePlatformSlice(platform: Platform, info: GenericInfo, slice: Slice) -> Bool {
@@ -129,9 +134,19 @@ public class XCFrameworkPackager {
         try! FileManager.default.createDirectory(at: platformUrl, withIntermediateDirectories: true, attributes: nil)
         
         let libraryUrl = platformUrl.appendingPathComponent(info.binaryUrl.lastPathComponent)
-        
-        var (shellStatus, _) = shell(pwd: platformUrl.path, args: ["lipo", "-thin", "\(slice.arch)", "-output", "\(libraryUrl.path)",  "\(info.binaryUrl.path)"])
-        
+
+        if info.slices.count > 1 {
+          let (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["lipo", "-thin", "\(slice.arch)", "-output", "\(libraryUrl.path)",  "\(info.binaryUrl.path)"])
+          if shellStatus != 0 {
+              print("Error: \(shellOutput)")
+          }
+        } else {
+          let (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["cp", "\(info.binaryUrl.path)", "\(libraryUrl.path)"])
+          if shellStatus != 0 {
+              print("Error: \(shellOutput)")
+          }
+        }
+
         if info.isDynamic {
             
             guard let simulatorPlatform = slice.destination.simulatorVariant() else { return false }
@@ -139,16 +154,21 @@ public class XCFrameworkPackager {
             let platformCode = simulatorPlatform.numericValue()
             let minVersion = slice.version
             let sdkVersion = slice.sdk
-            
-            (shellStatus, _) = shell("vtool",
+
+            let (shellStatus, shellOutput) = shell("vtool",
                                      "-arch", "\(slice.arch)",
                                      "-set-build-version", "\(platformCode)", "\(minVersion)", "\(sdkVersion)",
                                      "-replace", "-output",  "\(libraryUrl.path)", "\(libraryUrl.path)")
+
+           if shellStatus != 0 {
+               print("Error: \(shellOutput)")
+           }
+
             if shellStatus != 0 { return false }
             
         } else {
-            
-            (shellStatus, _) = shell(pwd: platformUrl.path, args: "ar", "x", "\(libraryUrl.path)")
+
+            var (shellStatus, _) = shell(pwd: platformUrl.path, args: "ar", "x", "\(libraryUrl.path)")
             if shellStatus != 0 { return false }
             
             let enumerator = FileManager.default.enumerator(at: platformUrl, includingPropertiesForKeys: nil)
@@ -166,9 +186,39 @@ public class XCFrameworkPackager {
         
         let outputUrl = tempDirUrl.appendingPathComponent(platform.stringValue())
             .appendingPathComponent(info.binaryRelativePath)
-        
-        (shellStatus, _) = shell("lipo", "-create", "-output", "\(outputUrl.path)", "\(outputUrl.path)", "\(libraryUrl.path)")
-        
+
+        let (shellStatus, shellOutput) = shell("lipo", "-create", "-output", "\(outputUrl.path)", "\(outputUrl.path)", "\(libraryUrl.path)")
+
+        if shellStatus != 0 {
+            print("Error: \(shellOutput)")
+        }
+
+        if let moduleUrlRelativePath = info.moduleUrlRelativePath {
+            // Copy over .swiftdoc and .swiftinterface as well
+
+            let doc_src = info.baseUrl.appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftdoc")
+            let doc_dst = tempDirUrl.appendingPathComponent(platform.stringValue()).appendingPathComponent(info.baseUrl.lastPathComponent).appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftdoc")
+
+            var (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["cp", "\(doc_src.path)", "\(doc_dst.path)"])
+            if shellStatus != 0 {
+                print("Error copying swiftdoc: \(shellOutput)")
+            }
+
+            let interface_src = info.baseUrl.appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftinterface")
+            let interface_dst = tempDirUrl.appendingPathComponent(platform.stringValue()).appendingPathComponent(info.baseUrl.lastPathComponent).appendingPathComponent(moduleUrlRelativePath).appendingPathComponent("\(slice.arch).swiftinterface")
+
+            (shellStatus, shellOutput) = shell(pwd: platformUrl.path, args: ["sed", "-E", "s/(arm64-apple-ios[^ ]*)/\\1-simulator/", "\(interface_src.path)"])
+            if shellStatus != 0 {
+                print("Error generating swiftinterface: \(shellOutput)")
+            } else {
+                do {
+                    try shellOutput.write(to: interface_dst, atomically: true, encoding: String.Encoding.utf8)
+                } catch (let e) {
+                    print("Error writing swiftinterface: \(e)")
+                }
+            }
+        }
+
         return shellStatus == 0
     }
 }
